@@ -24,7 +24,10 @@ class MainWindow(QMainWindow):
         # 创建按钮
         self.open_button = QPushButton("打开 STL 文件", self)
         self.open_button.clicked.connect(self.on_action_open_triggered2)
+        self.open_seg_button = QPushButton("seg STL 文件", self)
+        self.open_seg_button.clicked.connect(self.on_action_seg_triggered)
         layout.addWidget(self.open_button)
+        layout.addWidget(self.open_seg_button)
         layout.addWidget(self.interactor)
 
         self.setGeometry(300, 300, 800, 600)
@@ -32,6 +35,55 @@ class MainWindow(QMainWindow):
         self.interactor.Initialize()
         self.interactor.Start()
 
+    def on_action_seg_triggered(self):
+        # 获取场景中的最后一个Actor
+        actor = self.renderer.GetActors().GetLastActor()
+        if not actor:
+            QMessageBox.warning(self, "警告", "没有可用的模型")
+            return
+        
+        # 获取模型数据
+        poly_data = vtk.vtkPolyData.SafeDownCast(actor.GetMapper().GetInput())
+        if not poly_data:
+            QMessageBox.warning(self, "警告", "无法获取模型数据")
+            return
+        
+        # 创建切割平面
+        plane = vtk.vtkPlane()
+        plane.SetOrigin(0, 0, 0)
+        plane.SetNormal(0.0, 0.0, 1.0)
+        
+        # 创建切割器
+        cutter = vtk.vtkCutter()
+        cutter.SetCutFunction(plane)
+        cutter.SetInputData(poly_data)
+        cutter.Update()
+        
+        # 创建Stripper，用于连接切割后的线段
+        stripper = vtk.vtkStripper()
+        stripper.SetInputData(cutter.GetOutput())
+        stripper.Update()
+        
+        # 获取连接后的线段数据
+        stripped_data = stripper.GetOutput()
+        
+        # 计算每个切片的质心
+        points = stripped_data.GetPoints()
+        lines = stripped_data.GetLines()
+        lines.InitTraversal()
+        pt_ids = vtk.vtkIdList()
+        
+        while lines.GetNextCell(pt_ids):
+            npts = pt_ids.GetNumberOfIds()
+            centroid = [0.0, 0.0, 0.0]
+            for i in range(npts):
+                point = points.GetPoint(pt_ids.GetId(i))
+                centroid[0] += point[0]
+                centroid[1] += point[1]
+                centroid[2] += point[2]
+            centroid = [c / npts for c in centroid]
+            
+            print(f"Centroid: ({centroid[0]}, {centroid[1]}, {centroid[2]})")
     def on_action_open_triggered2(self):
         # 打开文件对话框以选择STL文件
         file_name, _ = QFileDialog.getOpenFileName(self, "打开STL文件", "", "STL Files (*.stl)")
